@@ -1,0 +1,16 @@
+{
+  "name": "tripledigit-crab-agents",
+  "description": "Claude Code mods by Triple Digit, the AI agency that builds tailored AI solutions for each company (triple-digit.com)",
+  "owner": {
+    "name": "Triple Digit",
+    "email": "hello@triple-digit.com",
+    "url": "https://triple-digit.com"
+  },
+  "plugins": [
+    {
+      "name": "crab-agents",
+      "source": "./",
+      "description": "Right-side Agents pane: every working and recently finished session as a hat-wearing crab, with model, effort, context, progress, needs-you highlights and 5-hour / weekly limit countdowns."
+    }
+  ]
+}
