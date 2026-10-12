@@ -1,7 +1,7 @@
 import { describe, expect, mock, test } from 'claude-code/testing'
 
 import { HATS, barSvg, crabSvg } from './crab'
-import { assignHats, browserShown, classify, effortStyle, endsWithQuestion, prettyModel, safeLink, until } from './register'
+import { asStoredLimits, assignHats, browserShown, classify, pickLimits, effortStyle, endsWithQuestion, prettyModel, safeLink, until } from './register'
 
 declare const setTimeout: (fn: (v?: unknown) => void, ms: number) => unknown
 
@@ -207,5 +207,29 @@ describe('pane visibility and safety', () => {
     expect(safeLink('C:/Windows/System32/calc.exe')).toBe(null)
     expect(safeLink('local_../../x')).toBe(null)
     expect(safeLink('local_a" & calc')).toBe(null)
+  })
+})
+
+describe('plan limits', () => {
+  const N = Date.parse('2026-10-12T02:00:00Z')
+  const card = [{ label: '5-hour limit', percentUsed: 38, resetsAt: '2026-10-12T05:10:00Z' }, { label: 'Weekly · all models', percentUsed: 58, resetsAt: '2026-10-13T13:00:00Z' }]
+  const stale = [{ label: '5-hour limit', percentUsed: 1, resetsAt: '2026-10-12T05:10:00Z' }, { label: 'Weekly · all models', percentUsed: 52, resetsAt: '2026-10-13T13:00:00Z' }]
+  test('the app usage card wins', async () => {
+    expect(pickLimits(card, { limits: [], readAt: 0 }, stale, N)).toEqual({ limits: card, readAt: N, source: 'app' })
+  })
+  test('when the card does not answer, its last reading is kept over a session reading', async () => {
+    const out = pickLimits(null, { limits: card, readAt: N - 60_000 }, stale, N)
+    expect(out.source).toBe('kept')
+    expect(out.limits[0]?.percentUsed).toBe(38)
+    expect(out.readAt).toBe(N - 60_000)
+  })
+  test('a kept window that has reset drops out; a session reading is the last resort', async () => {
+    const later = Date.parse('2026-10-12T06:00:00Z')
+    expect(pickLimits(null, { limits: card, readAt: N }, [], later).limits.map(l => l.label)).toEqual(['Weekly · all models'])
+    expect(pickLimits(null, { limits: [], readAt: 0 }, stale, N).source).toBe('session')
+  })
+  test('an older bare list is still read', async () => {
+    expect(asStoredLimits(card)).toEqual({ limits: card, readAt: 0 })
+    expect(asStoredLimits(undefined)).toEqual({ limits: [], readAt: 0 })
   })
 })

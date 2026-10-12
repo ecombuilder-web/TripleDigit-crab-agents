@@ -18,7 +18,7 @@ const SESSIONS = 'ccd_session_mgmt'
 /** Without the app's session tools, an open turn written to in this window counts as running. */
 const RUNNING_FRESH_MS = 10 * 60 * 1000
 
-const EMPTY: CrabSnapshot = { updatedAt: 0, rows: [], limits: [], error: null }
+const EMPTY: CrabSnapshot = { updatedAt: 0, rows: [], limits: [], limitsAt: 0, error: null }
 const snapshot = atom({ plugin: 'crab-agents', key: 'snapshot' } as const, EMPTY)
 const finishedOpen = atom({ plugin: 'crab-agents', key: 'finishedOpen' } as const, false)
 const themeAtom = atom({ plugin: 'crab-agents', key: 'theme' } as const, 'auto' as CrabTheme)
@@ -178,6 +178,33 @@ export const assignHats = (ids: string[], held: Record<string, number>) => {
   return out
 }
 
+// ---------- plan limits ----------
+
+type StoredLimits = { limits: CrabLimit[]; readAt: number }
+
+/** The kept reading; an older build stored a bare list with no time. */
+export const asStoredLimits = (v: unknown): StoredLimits => {
+  if (Array.isArray(v)) return { limits: v as CrabLimit[], readAt: 0 }
+  const o = v as Partial<StoredLimits> | undefined
+  return o && Array.isArray(o.limits) ? { limits: o.limits, readAt: Number(o.readAt) || 0 } : { limits: [], readAt: 0 }
+}
+
+/**
+ * The app's usage card is the one source of truth: it is the account's live
+ * figure, the same in every session. When the app cannot answer for a moment,
+ * the last card reading is kept (shared by every session through the store)
+ * until its window resets. A session's own last API reading is used only when
+ * there has never been a card reading: it is that one session's view, often
+ * hours old, and it never replaces the card's.
+ */
+export const pickLimits = (app: CrabLimit[] | null, stored: StoredLimits, fallback: CrabLimit[], now: number) => {
+  const live = (ls: CrabLimit[]) => ls.filter(l => !l.resetsAt || Date.parse(l.resetsAt) > now)
+  if (app) return { limits: app, readAt: now, source: 'app' as const }
+  const kept = live(stored.limits)
+  if (kept.length) return { limits: kept, readAt: stored.readAt, source: 'kept' as const }
+  return { limits: live(fallback), readAt: 0, source: 'session' as const }
+}
+
 // ---------- polling ----------
 
 let isPolling = false
@@ -294,26 +321,30 @@ const poll = async ($: EngineInterface) => {
     // Keep a hat for a while after its crab leaves, so a returning session keeps it.
     await $.store.set('hats', Object.fromEntries(Object.entries({ ...held, ...hats }).slice(-80)))
 
-    const remembered = ((await $.store.get('limits')) ?? []) as CrabLimit[]
-    const fresh: CrabLimit[] =
-      usage?.plan?.status === 'ok'
-        ? (usage.plan.windows ?? []).map(w => ({ label: w.label, percentUsed: w.percentUsed, resetsAt: w.resetsAt ?? null }))
-        : ((await $.session.usage().catch(() => undefined))?.rateLimits ?? []).map(r => ({
-            label: r.kind === 'five_hour' ? '5-hour limit' : r.kind === 'seven_day' ? 'Weekly · all models' : r.kind,
-            percentUsed: r.percentUsed,
-            resetsAt: r.resetsAt ?? null,
-          }))
-    const limits = fresh.length ? fresh : remembered.filter(l => !l.resetsAt || Date.parse(l.resetsAt) > now)
-    if (fresh.length) await $.store.set('limits', fresh)
+    const app: CrabLimit[] | null =
+      usage?.plan?.status === 'ok' && usage.plan.windows?.length
+        ? usage.plan.windows.map(w => ({ label: w.label, percentUsed: w.percentUsed, resetsAt: w.resetsAt ?? null }))
+        : null
+    const stored = asStoredLimits(await $.store.get('limits'))
+    const fallback = app || stored.limits.length
+      ? []
+      : ((await $.session.usage().catch(() => undefined))?.rateLimits ?? []).map(r => ({
+          label: r.kind === 'five_hour' ? '5-hour limit' : r.kind === 'seven_day' ? 'Weekly · all models' : r.kind,
+          percentUsed: r.percentUsed,
+          resetsAt: r.resetsAt ?? null,
+        }))
+    const picked = pickLimits(app, stored, fallback, now)
+    if (app) await $.store.set('limits', { limits: app, readAt: now })
 
     await update($, snapshot, () => ({
       updatedAt: now,
       rows: rows.map(r => ({ ...r, hat: hats[r.id] ?? 0 })),
-      limits,
+      limits: picked.limits,
+      limitsAt: picked.readAt,
       error: null,
     }))
     const tally = (st: CrabRow['state']) => rows.filter(r => r.state === st).length
-    $.ui.log(`crab-agents: ${listed ? 'app' : 'disk'} list, needs you ${tally('attention')}, working ${tally('working')}, finished ${tally('finished')}, limits ${limits.length}: ${rows.map(r => `${r.title} [${r.state}${r.attention ? `: ${r.attention}` : ''}] hat ${hats[r.id]}`).join('; ')}`, { to: 'debug' })
+    $.ui.log(`crab-agents: ${listed ? 'app' : 'disk'} list, needs you ${tally('attention')}, working ${tally('working')}, finished ${tally('finished')}, limits ${picked.source} ${picked.limits.length}: ${rows.map(r => `${r.title} [${r.state}${r.attention ? `: ${r.attention}` : ''}] hat ${hats[r.id]}`).join('; ')}`, { to: 'debug' })
   } catch (err) {
     await update($, snapshot, s => ({ ...s, error: String(err instanceof Error ? err.message : err) }))
   } finally {
@@ -682,6 +713,11 @@ export const register: Register = on => {
           {limitTile('Session limit', fiveHour)}
           {limitTile('Weekly limit', weekly)}
         </Box>
+        {snap.limitsAt && now - snap.limitsAt > 3 * 60_000 ? (
+          <Text key="limits-age" color={C.dim}>Limits as of {ago(now - snap.limitsAt)}; the app's usage card did not answer since.</Text>
+        ) : (
+          ''
+        )}
         {otherWeekly.map(l => (
           <Text key={`ow-${l.label}`} color={C.dim}>
             {l.label}: {l.percentUsed}% · resets in {l.resetsAt ? until(Date.parse(l.resetsAt) - now) : '—'}

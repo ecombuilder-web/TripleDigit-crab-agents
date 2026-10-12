@@ -26,6 +26,8 @@ export type CrabSnapshot = {
   updatedAt: number
   rows: CrabRow[]
   limits: CrabLimit[]
+  /** When the limits were read from the app's usage card, ms; 0 when unknown. */
+  limitsAt: number
   error: string | null
 }
 
