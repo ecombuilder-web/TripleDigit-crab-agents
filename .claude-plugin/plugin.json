@@ -16,5 +16,6 @@
     "sessions",
     "dashboard",
     "triple-digit"
-  ]
+  ],
+  "license": "MIT"
 }

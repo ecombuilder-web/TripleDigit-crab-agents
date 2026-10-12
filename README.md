@@ -94,6 +94,10 @@ When the desktop app's session tools (`ccd_session_mgmt`) are reachable, they su
 - The scanner is read-only, except for one parse cache at `~/.claude/cache/crab-agents-scan.json`.
 - Opening a session hands the OS only the app's own `claude://` deep link, rebuilt from a checked session id. No other path or link is ever opened.
 
+## License
+
+[MIT](LICENSE), © 2026 Triple Digit. Free to use, change and share.
+
 ## Develop
 
 ```bash
