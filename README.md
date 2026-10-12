@@ -1,12 +1,14 @@
 <div align="center">
 
+<a href="https://triple-digit.com"><img src="docs/triple-digit-logo.jpg" alt="Triple Digit" width="360"></a>
+
 # 🦀 Crab Agents
 
 **See every Claude Code session at a glance. Jump straight to the ones waiting on you.**
 
 A free Claude Code mod by **[Triple Digit](https://triple-digit.com)**, the AI agency that builds tailored AI solutions for each company.
 
-[**Work with Triple Digit →**](https://triple-digit.com) &nbsp;·&nbsp; [Install](#install) &nbsp;·&nbsp; [How it works](#how-it-works)
+[**Work with Triple Digit →**](https://triple-digit.com) &nbsp;·&nbsp; [Custom panels](#a-panel-built-for-your-team) &nbsp;·&nbsp; [Install](#install) &nbsp;·&nbsp; [How it works](#how-it-works)
 
 </div>
 
@@ -32,6 +34,22 @@ We built Crab Agents because we run many Claude Code agents side by side every d
 - 🌐 **AI-powered websites and internal tools**, designed, built, shipped and maintained.
 
 If your team is wondering where AI could save hours every week, that is the conversation we like to have.
+
+## A panel built for your team
+
+Crab Agents is one example of what a **custom Claude Desktop panel** can do. Claude Desktop lets a mod draw its own live panel beside your conversation, so the information your team needs is always one glance away, inside the tool they already work in.
+
+**Triple Digit builds custom panels and mods for your company.** Each one is designed around your own workflow and data, for example:
+
+- 📊 **Live business dashboards** next to the chat: sales, orders, support queue, campaign results.
+- ✅ **Approval queues**: drafts, refunds or purchases that an AI agent has prepared and that wait for one click from you.
+- 🤖 **Agent control rooms**: which automations are running, which failed and which need a human, like this mod but for your agents.
+- 🔌 **Panels wired to your systems**: CRM, inbox, spreadsheets, internal tools, through MCP connectors we set up and secure.
+- 🎨 **Your brand, your rules**: your colours, your wording, your team's permissions.
+
+The panel stays on your machine and reads only what you connect to it. We build it, test it, hand it over and keep it working as your tools change.
+
+👉 **[Tell us what your team looks at all day at triple-digit.com](https://triple-digit.com)**
 
 👉 **[Book a call at triple-digit.com](https://triple-digit.com)**
 

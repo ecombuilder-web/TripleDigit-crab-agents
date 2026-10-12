@@ -15,7 +15,9 @@
     "agents",
     "sessions",
     "dashboard",
-    "triple-digit"
+    "triple-digit",
+    "custom-panels",
+    "claude-desktop"
   ],
   "license": "MIT"
 }
