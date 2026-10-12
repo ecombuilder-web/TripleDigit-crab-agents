@@ -2,7 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, McpToolResult, Register } from 'claude-code'
 
 import type { CrabLimit, CrabRow, CrabSnapshot, CrabTheme } from '../types'
-import { HATS, barSvg, crabSvg } from './crab'
+import { HATS, barSvg, crabSvg, ruleSvg } from './crab'
 
 const PANE = 'crab-agents'
 const TITLE = 'Agents'
@@ -439,6 +439,10 @@ type Palette = {
   green: string
   amber: string
   accent: string
+  /** Soft red behind a session that needs you, in place of a frame. */
+  alert: string
+  /** The hairline between rows, as a colour SVG can paint. */
+  rule: string
 }
 
 /**
@@ -458,6 +462,8 @@ const PALETTES: Record<CrabTheme, Palette> = {
     green: 'success',
     amber: 'warning',
     accent: 'claude',
+    alert: 'diffRemovedDimmed',
+    rule: '#8a877e55',
   },
   light: {
     bg: '#faf9f5',
@@ -470,6 +476,8 @@ const PALETTES: Record<CrabTheme, Palette> = {
     green: '#3f8a5a',
     amber: '#a8701f',
     accent: '#d97757',
+    alert: '#f9e9e6',
+    rule: '#e3e0d6',
   },
   dark: {
     bg: '#262624',
@@ -482,6 +490,8 @@ const PALETTES: Record<CrabTheme, Palette> = {
     green: '#6fb383',
     amber: '#d9a24a',
     accent: '#d97757',
+    alert: '#3b2a27',
+    rule: '#45443f',
   },
 }
 
@@ -582,8 +592,18 @@ export const register: Register = on => {
       </Text>
     )
 
+    /** A 1px hairline across the pane: rows sit between these, like the sidebar's list. */
+    const rule = (key: string) =>
+      Svg ? (
+        <Svg key={key} source={ruleSvg(C.rule)} alt="" height={1} />
+      ) : (
+        <Text key={key} color={C.line} wrap="truncate-end">{'─'.repeat(Math.max(4, cols - 2))}</Text>
+      )
+    /** Rows with a hairline between each, no frames. */
+    const rows = (prefix: string, list: CrabRow[]) => list.flatMap((r, i) => (i ? [rule(`${prefix}-rule-${r.id}`), card(r)] : [card(r)]))
+
     const tile = (key: string, label: string, value: string, note: string, valueColor: string, noteColor = C.dim) => (
-      <Box key={key} flexDirection="column" borderStyle="round" borderColor={C.line} backgroundColor={C.card} paddingX={1} flexGrow={1}>
+      <Box key={key} flexDirection="column" flexGrow={1}>
         <Text color={C.dim} wrap="truncate-end">{label}</Text>
         <Text bold color={valueColor} wrap="truncate-end">{value}</Text>
         <Text color={noteColor} wrap="truncate-end">{note}</Text>
@@ -616,10 +636,9 @@ export const register: Register = on => {
           position="relative"
           flexDirection="column"
           paddingX={1}
-          borderStyle="round"
-          borderColor={isAttention ? C.red : C.line}
-          backgroundColor={C.card}
-          hover={{ backgroundColor: C.hover }}
+          paddingY={isAttention ? 1 : 0}
+          backgroundColor={isAttention ? C.alert : undefined}
+          hover={{ backgroundColor: isAttention ? C.alert : C.hover }}
         >
           {/* The whole card is the click target, like a sidebar row; drawn first so Open / Dismiss stay on top. */}
           {r.isSelf ? '' : clickLayer(`click-${r.id}`, { open: r.id })}
@@ -708,7 +727,7 @@ export const register: Register = on => {
           )}
         </Box>
 
-        <Box flexDirection="row" gap={1}>
+        <Box flexDirection="row" gap={3}>
           {tile('working-count', 'Running', `${working.length + attention.length}`, attention.length ? `${attention.length} need you` : 'all clear', C.text, attention.length ? C.red : C.dim)}
           {limitTile('Session limit', fiveHour)}
           {limitTile('Weekly limit', weekly)}
@@ -727,20 +746,21 @@ export const register: Register = on => {
         {snap.updatedAt === 0 ? <Text color={C.dim}>Looking for your sessions…</Text> : ''}
 
         {attention.length ? (
-          <Box flexDirection="column" gap={1}>
+          <Box flexDirection="column">
             {heading('h-attention', `NEEDS YOU · ${attention.length}`, C.red)}
-            {attention.map(card)}
+            {rows('a', attention)}
           </Box>
         ) : (
           ''
         )}
 
-        <Box flexDirection="column" gap={1}>
+        <Box flexDirection="column">
           {heading('h-working', `WORKING · ${working.length}`, C.dim)}
-          {working.length ? working.map(card) : <Text color={C.dim}>Nothing running right now.</Text>}
+          {working.length ? rows('w', working) : <Text color={C.dim}>Nothing running right now.</Text>}
         </Box>
 
-        <Box flexDirection="column" gap={1}>
+        <Box flexDirection="column">
+          {rule('completed-rule')}
           <Box key="completed-header" position="relative" flexDirection="row" justifyContent="space-between" hover={{ backgroundColor: C.hover }}>
             <Text bold color={C.dim}>
               {isFinishedOpen ? '▾' : '▸'} COMPLETED · {finished.length}
@@ -755,7 +775,7 @@ export const register: Register = on => {
               {isFinishedOpen ? 'Hide completed' : 'Show completed'}
             </Button>
           )}
-          {isFinishedOpen ? finished.map(card) : ''}
+          {isFinishedOpen ? rows('f', finished) : ''}
         </Box>
       </Box>
     )

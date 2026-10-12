@@ -62,3 +62,7 @@ export const barSvg = (width: number, color: string, fraction: number, isAlert =
   const fill = Math.max(f > 0 ? 6 : 0, Math.round(w * f))
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="6" viewBox="0 0 ${w} 6"><g><rect x="0" y="0" width="${w}" height="6" rx="3" fill="${color}" opacity="0.22"/><rect x="0" y="0" width="${fill}" height="6" rx="3" fill="${color}" opacity="${fillOpacity}"/>${isAlert ? BLINK : ''}</g></svg>`
 }
+
+/** A 1px line, wide enough for any pane; the slot clips it to the pane's width. */
+export const ruleSvg = (color: string) =>
+  `<svg xmlns="http://www.w3.org/2000/svg" width="2000" height="1" viewBox="0 0 2000 1" preserveAspectRatio="none"><rect width="2000" height="1" fill="${color}"/></svg>`
