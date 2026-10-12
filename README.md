@@ -10,6 +10,14 @@ A free Claude Code mod by **[Triple Digit](https://triple-digit.com)**, the AI a
 
 </div>
 
+<div align="center">
+
+<img src="docs/crab-agents-pane.png" alt="The Crab Agents pane: a session that needs you in soft red, three working sessions, and the session and weekly limit countdowns" width="380">
+
+<sub>The Agents pane (sample session names). Each crab is one Claude Code session.</sub>
+
+</div>
+
 ---
 
 ## Built by Triple Digit
