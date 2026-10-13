@@ -1,6 +1,6 @@
 {
   "name": "crab-agents",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Right-side Agents pane by Triple Digit (triple-digit.com, tailored AI solutions for each company): every working and recently finished session as a hat-wearing crab, with model, effort, context, progress, needs-you highlights and usage limit countdowns.",
   "types": "./types/index.d.ts",
   "author": {

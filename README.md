@@ -60,11 +60,12 @@ The panel stays on your machine and reads only what you connect to it. We build 
 Crab Agents adds an **Agents** pane on the right of every Claude Code session. Each of your desktop sessions shows up as a pixel crab wearing its own hat, so while you work in one session you can see what all the others are doing.
 
 - **Header:** a one-line summary, how many sessions are running (and how many need you), the time until the **5-hour session limit** resets and the time until the **weekly limit** resets, each with % used. Costs are never shown.
-- **Needs you** (red, at the top): sessions with a pending `AskUserQuestion`, a plan waiting for approval, a tool call waiting for permission (in modes that ask first), or a reply whose last paragraph asks you something. **Open** jumps to the session; **Dismiss** hides the flag until that session does something new.
+- **Needs you** (red, at the top): sessions with a pending `AskUserQuestion`, a plan waiting for approval, a tool call waiting for permission (in modes that ask first), or a reply from the last 3 hours whose last paragraph asks you something (older ones move to Completed). **Open** jumps to the session; **Dismiss** hides the flag until that session's conversation moves on.
 - **Working:** running sessions. Each card shows the title, effort (light / medium / careful / heavy) with the model, the checklist count (`3/5 tasks`) when the session keeps a todo or task list (otherwise a still, faded full bar), context % and tokens, and how long the current turn has run.
 - **Completed · last 24h:** idle sessions, folded by default; click the bar to show them. Each one leaves the pane 24 hours after its last activity, but stays in the sidebar.
 - **Click anywhere on a card** to open that session, the same as clicking it in the left sidebar.
 - **Theme** follows the Claude app's light or dark setting by default. The small switch at the top right cycles ◐ Auto → ☀ Light → ☾ Dark (Claude desktop's ivory and charcoal surfaces), and the choice is remembered. Nothing moves while sessions work; only a crab and bar that need you blink.
+- **Light on your machine:** every open session runs the mod, but only the one on screen scans, asks for usage (at most once a minute) and redraws; the rest sit idle.
 
 Routines and scheduled runs, archived sessions, and sessions started by another session are left out.
 

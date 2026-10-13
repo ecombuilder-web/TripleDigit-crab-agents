@@ -6,7 +6,12 @@ import { HATS, barSvg, crabSvg, ruleSvg } from './crab'
 
 const PANE = 'crab-agents'
 const TITLE = 'Agents'
-const POLL_MS = 8000
+const POLL_MS = 12_000
+/** The usage card and each session's exact context reading are asked at most this often. */
+const USAGE_MS = 60_000
+/** A finished reply that ends on a question stops counting as "needs you" after this. */
+const REPLY_STALE_MS = 3 * 60 * 60 * 1000
+const WINDOW = 'ccd_window'
 /** How often the pane checks whether the built-in browser is on screen. */
 const BROWSER_MS = 2000
 const BROWSER = 'Claude_Browser'
@@ -151,7 +156,7 @@ export const classify = (
     return { state: 'attention', attention: `Waiting for approval: ${t.pendingTool.name}` }
   if (s.isRunning) return { state: 'working', attention: null }
   if (now - s.lastActivityAt > DAY_MS) return null
-  if (t?.lastRole === 'assistant' && endsWithQuestion(t.lastAssistantText))
+  if (t?.lastRole === 'assistant' && now - s.lastActivityAt < REPLY_STALE_MS && endsWithQuestion(t.lastAssistantText))
     return { state: 'attention', attention: 'Waiting on your reply' }
   return { state: 'finished', attention: null }
 }
@@ -205,9 +210,34 @@ export const pickLimits = (app: CrabLimit[] | null, stored: StoredLimits, fallba
   return { limits: live(fallback), readAt: 0, source: 'session' as const }
 }
 
+// ---------- on screen ----------
+
+/**
+ * Every open session runs this mod, so a session that is not on screen does
+ * no work: no scan, no usage calls, no redraws, and it never reopens its pane
+ * (which could pull the app's focus back to it). True when the app cannot say.
+ */
+let isShown = true
+let shownAt = 0
+
+const isOnScreen = async ($: EngineInterface) => {
+  const now = await $.clock.now()
+  if (now - shownAt < 1500) return isShown
+  const layout = await $.mcp
+    .call(WINDOW, 'get_window_layout', {})
+    .then(r => jsonOf<{ this_session?: { on_screen?: boolean } }>(r), () => undefined)
+  isShown = layout?.this_session?.on_screen ?? true
+  shownAt = now
+  return isShown
+}
+
 // ---------- polling ----------
 
 let isPolling = false
+let usageAt = 0
+let usageLast: Usage | undefined
+/** Exact context readings per session, asked at most once a USAGE_MS. */
+const ctxRead = new Map<string, { at: number; percent: number }>()
 
 const runScanner = async ($: EngineInterface, ids: string[]) => {
   const script = `${$.plugin.root}/bin/scan.mjs`
@@ -216,17 +246,24 @@ const runScanner = async ($: EngineInterface, ids: string[]) => {
   return JSON.parse(r.stdout || '{}') as Record<string, Scan>
 }
 
-const poll = async ($: EngineInterface) => {
+const poll = async ($: EngineInterface, force = false) => {
   if (isPolling) return
+  if (!force && !(await isOnScreen($))) return
   isPolling = true
   try {
     const now = await $.clock.now()
-    const [listed, self, usage, cliId] = await Promise.all([
+    const isUsageDue = force || now - usageAt >= USAGE_MS
+    const [listed, self, usageNow, cliId] = await Promise.all([
       callSessions<ListedSession[]>($, 'list_sessions', { limit: 60 }),
       callSessions<ListedSession>($, 'get_session', { session_id: 'self' }),
-      callSessions<Usage>($, 'get_usage', {}),
+      isUsageDue ? callSessions<Usage>($, 'get_usage', {}) : Promise.resolve(undefined),
       $.session.id().catch(() => ''),
     ])
+    if (usageNow) {
+      usageLast = usageNow
+      usageAt = now
+    }
+    const usage = usageNow ?? usageLast
     const fromApp = [...(self ? [self] : []), ...(listed ?? [])]
     const scans = await runScanner($, fromApp.map(s => s.sessionId)).catch(err => {
       $.ui.log(`crab-agents: ${String(err)}`, { to: 'debug' })
@@ -263,9 +300,12 @@ const poll = async ($: EngineInterface) => {
     const running = all.filter(s => s.isRunning).slice(0, 8)
     await Promise.all(
       running.map(async s => {
+        const kept = ctxRead.get(s.sessionId)
+        if (kept && now - kept.at < USAGE_MS) return void exact.set(s.sessionId, kept.percent)
         const u = s.isSelf ? usage : await callSessions<Usage>($, 'get_usage', { session_id: s.sessionId }).catch(() => undefined)
         const c = u?.context
         if (c?.status !== 'ok' || c.percentUsed == null) return
+        ctxRead.set(s.sessionId, { at: now, percent: c.percentUsed })
         exact.set(s.sessionId, c.percentUsed)
         const model = scans[s.sessionId]?.model
         if (model && c.contextWindow) windows[model] = c.contextWindow
@@ -277,7 +317,12 @@ const poll = async ($: EngineInterface) => {
     for (const s of all) {
       const scan = scans[s.sessionId]
       if (scan?.scheduledTaskId) continue // routines and other scheduled runs stay out
-      const lastActivityAt = Math.max(Date.parse(s.lastActivityAt) || 0, scan?.lastActivityAt ?? 0)
+      // The transcript's own write time: the app also bumps a session's
+      // lastActivityAt when it is merely focused or its config is rewritten,
+      // which made old sessions look fresh and undid every Dismiss.
+      const lastActivityAt = scan?.transcript?.mtimeMs
+        ? Math.round(scan.transcript.mtimeMs)
+        : Math.max(Date.parse(s.lastActivityAt) || 0, scan?.lastActivityAt ?? 0)
       const c = classify({ isRunning: s.isRunning, lastActivityAt }, scan, now)
       if (!c) continue
       if (c.state === 'attention' && dismissed[s.sessionId] === lastActivityAt) {
@@ -369,14 +414,12 @@ const openSession = async ($: EngineInterface, row: CrabRow) => {
     $.ui.toast(`Could not open “${row.title}”`)
     return
   }
-  // Same as clicking its row in the sidebar: hand the app its own deep link.
-  const os = (await $.env.get('OS')) ?? ''
-  const argv = /windows/i.test(os)
-    ? ['rundll32.exe', 'url.dll,FileProtocolHandler', link]
-    : (await $.env.get('XDG_CURRENT_DESKTOP')) !== undefined
-      ? ['xdg-open', link]
-      : ['open', link]
+  // Same as clicking its row in the sidebar: hand the app its own deep link,
+  // through a small Node launcher that outlives the hand-off to the app.
+  $.ui.toast(`Opening “${row.title}”…`)
+  const argv = ['node', `${$.plugin.root}/bin/open.mjs`, link]
   const r = await $.process.run(argv, { timeoutMs: 10000 }).catch(err => ({ exitCode: 1, stderr: String(err), stdout: '' }))
+  $.ui.log(`crab-agents: open ${row.id} exit ${r.exitCode} ${r.stderr.slice(0, 200)}`, { to: 'debug' })
   if (r.exitCode !== 0) $.ui.toast(`Could not open “${row.title}”`)
 }
 
@@ -384,7 +427,7 @@ const dismiss = async ($: EngineInterface, row: CrabRow) => {
   const dismissed = ((await $.store.get('dismissed')) ?? {}) as Record<string, number>
   dismissed[row.id] = row.lastActivityAt
   await $.store.set('dismissed', Object.fromEntries(Object.entries(dismissed).slice(-100)))
-  await poll($)
+  await poll($, true)
 }
 
 // ---------- pane visibility ----------
@@ -415,6 +458,10 @@ const syncPane = async ($: EngineInterface) => {
   if (isSyncing) return
   isSyncing = true
   try {
+    const wasShown = isShown
+    if (!(await isOnScreen($))) return
+    // Back on screen: refresh now rather than at the next poll.
+    if (!wasShown) void poll($)
     const browser = await isBrowserInUse($).catch(() => false)
     if (browser !== (await read($, browserInUse))) await update($, browserInUse, () => browser)
     const isWanted = !(await read($, closedByYou)) && !browser
@@ -511,10 +558,19 @@ export const register: Register = on => {
     if (isTheme(saved)) await update($, themeAtom, () => saved)
     await $.command.register({ name: 'crabs', description: 'Open the Agents pane: every working and finished session' })
     void syncPane($).catch(() => undefined)
-    void poll($)
+    void poll($, true)
     $.clock.every(POLL_MS, () => void poll($))
     $.clock.every(BROWSER_MS, () => void syncPane($).catch(() => undefined))
-    $.clock.every(1000, () => $.ui.invalidate('ui.render'))
+    // The turn clocks tick each second only while a session runs and this one
+    // is on screen; otherwise the "ago" labels are refreshed every half minute.
+    let tick = 0
+    $.clock.every(1000, () => {
+      tick++
+      if (!isShown) return
+      void read($, snapshot).then(snap => {
+        if (tick % 30 === 0 || snap.rows.some(r => r.isRunning)) $.ui.invalidate('ui.render')
+      })
+    })
     return started
   })
 
@@ -534,7 +590,7 @@ export const register: Register = on => {
   on('command.run', { command: 'crabs' }, async $ => {
     await update($, closedByYou, () => false)
     await $.ui.open({ id: PANE, title: TITLE, focus: true })
-    void poll($)
+    void poll($, true)
     const browser = await read($, browserInUse)
     return { text: browser ? 'Agents pane opened. It steps aside again while the browser is on screen.' : 'Agents pane opened.' }
   })

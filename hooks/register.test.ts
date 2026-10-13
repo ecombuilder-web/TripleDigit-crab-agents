@@ -43,6 +43,12 @@ describe('classify', () => {
     const s = scan({}, { lastAssistantText: 'Updated both.\n\nShould I start the next one?' })
     expect(classify({ isRunning: false, lastActivityAt: NOW - 1000 }, s, NOW)?.attention).toBe('Waiting on your reply')
   })
+  test('a question reply left for hours moves to completed', async () => {
+    const s = scan({}, { lastAssistantText: 'Want me to also do the logo?' })
+    expect(classify({ isRunning: false, lastActivityAt: NOW - 4 * 3_600_000 }, s, NOW)?.state).toBe('finished')
+    // A real AskUserQuestion still waits, however old.
+    expect(classify({ isRunning: false, lastActivityAt: NOW - 4 * 3_600_000 }, scan({}, { question: 'Which?' }), NOW)?.state).toBe('attention')
+  })
   test('a slow tool in a mode that asks first is an approval wait; in auto it is not', async () => {
     const pending = { pendingTool: { name: 'Bash', at: NOW - 60_000 }, lastRole: 'tool' }
     expect(classify({ isRunning: true, lastActivityAt: NOW }, scan({ permissionMode: 'default' }, pending), NOW)?.state).toBe('attention')
@@ -167,8 +173,9 @@ describe('live pane', () => {
     expect(await ui.find({ text: /Old finished job/ })).toBeDefined()
     await ui.pointer({ type: 'down', x: 1, y: 0, button: 'left', in: 'click-local_a' })
     await ui.pointer({ type: 'up', x: 1, y: 0, button: 'left', in: 'click-local_a' })
-    for (let i = 0; i < 50 && !ran.some(a => a[0] === 'rundll32.exe'); i++) await new Promise(r => setTimeout(r, 10))
-    expect(ran.find(a => a[0] === 'rundll32.exe')).toEqual(['rundll32.exe', 'url.dll,FileProtocolHandler', 'claude://claude.ai/epitaxy/local_a'])
+    const opener = (a: string[]) => a[0] === 'node' && /open\.mjs$/.test(a[1] ?? '')
+    for (let i = 0; i < 50 && !ran.some(opener); i++) await new Promise(r => setTimeout(r, 10))
+    expect(ran.find(opener)?.[2]).toBe('claude://claude.ai/epitaxy/local_a')
     await ui.unmount()
   })
 })

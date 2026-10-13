@@ -199,22 +199,46 @@ const parseTranscript = (text, isWhole) => {
   }
 }
 
+/** The few metadata fields the pane uses; the files themselves run to a megabyte. */
+const META_FIELDS = ['cliSessionId', 'title', 'isArchived', 'parentSessionId', 'model', 'effort', 'scheduledTaskId', 'permissionMode', 'createdAt', 'latestUserFrameAt', 'lastActivityAt', 'cwd', 'originCwd']
+
+/** Reads a metadata file only when its size or time changed since the last scan. */
+const readMeta = (metaPath, metaCache, nextMeta) => {
+  const st = fs.statSync(metaPath)
+  const stamp = `${st.size}:${st.mtimeMs}`
+  const hit = metaCache[metaPath]
+  if (hit?.stamp === stamp) {
+    nextMeta[metaPath] = hit
+    return hit.meta
+  }
+  const full = JSON.parse(fs.readFileSync(metaPath, 'utf8'))
+  const meta = Object.fromEntries(META_FIELDS.map(k => [k, full[k]]))
+  nextMeta[metaPath] = { stamp, meta }
+  return meta
+}
+
 const main = () => {
   const input = readStdin()
   const ids = (Array.isArray(input.ids) ? input.ids : []).filter(id => typeof id === 'string' && SESSION_ID.test(id)).slice(0, 200)
   const all = input.all === true
   const withinMs = Math.min(Number(input.withinMs) || 26 * 3600 * 1000, 7 * 24 * 3600 * 1000)
   let cache = {}
-  try { cache = JSON.parse(fs.readFileSync(CACHE, 'utf8')) } catch {}
+  let metaCache = {}
+  try {
+    const kept = JSON.parse(fs.readFileSync(CACHE, 'utf8'))
+    // { t: transcripts, m: metadata }; an older build kept transcripts alone.
+    if (kept?.t && kept?.m) { cache = kept.t; metaCache = kept.m }
+  } catch {}
   const metaPaths = all ? recentMetadata(withinMs) : new Map()
   const missing = ids.filter(id => !metaPaths.has(id))
   for (const [id, p] of indexMetadata(missing)) metaPaths.set(id, p)
   const out = {}
   const nextCache = {}
+  const nextMeta = {}
 
   for (const [id, metaPath] of metaPaths) {
     let meta
-    try { meta = JSON.parse(fs.readFileSync(metaPath, 'utf8')) } catch { continue }
+    try { meta = readMeta(metaPath, metaCache, nextMeta) } catch { continue }
     if (meta.isArchived && !ids.includes(id)) continue
     const rec = {
       sessionId: id,
@@ -249,7 +273,7 @@ const main = () => {
   try {
     fs.mkdirSync(path.dirname(CACHE), { recursive: true })
     const tmp = `${CACHE}.${process.pid}.tmp`
-    fs.writeFileSync(tmp, JSON.stringify(nextCache), { mode: 0o600 })
+    fs.writeFileSync(tmp, JSON.stringify({ t: nextCache, m: nextMeta }), { mode: 0o600 })
     fs.renameSync(tmp, CACHE) // whole or not at all, so a reader never sees half a file
   } catch {}
   try { fs.rmSync(path.join(os.tmpdir(), 'crab-agents-scan-cache.json'), { force: true }) } catch {}
